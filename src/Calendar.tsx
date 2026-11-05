@@ -1,11 +1,10 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
-import { GOOGLE_ENABLED, connectGoogleCalendar, getToken, lastSync, syncGoogle } from './lib/google';
 import { importIcsFile } from './lib/importer';
 import { clearPendingInvite, getPendingInvite } from './lib/invite';
 import { addDays, monthGrid, startOfWeek } from './lib/dates';
-import { DisplayEvent, FRIEND_COLORS, NewEvent, Visibility } from './lib/types';
+import { DisplayEvent, EVENT_COLORS, FRIEND_COLORS, NewEvent, Visibility } from './lib/types';
 import { useCalendar } from './hooks/useCalendar';
 import { useFriends } from './hooks/useFriends';
 import CalendarView from './components/CalendarView';
@@ -26,7 +25,6 @@ export default function Calendar({ session }: { session: Session }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<ModalState | null>(null);
   const [toast, setToast] = useState('');
-  const [syncing, setSyncing] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [invite, setInvite] = useState<{ id: string; name: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -44,7 +42,7 @@ export default function Calendar({ session }: { session: Session }) {
   const nameOf = useCallback(
     (id: string) => {
       const p = accepted.find((r) => r.profile.id === id)?.profile;
-      return (p?.display_name || p?.email || 'Amigo').split(' ')[0];
+      return (p?.display_name || p?.username || p?.email || 'Amigo').split(' ')[0];
     },
     [accepted],
   );
@@ -102,33 +100,6 @@ export default function Calendar({ session }: { session: Session }) {
     setInvite(null);
   };
 
-  // --- Google Calendar (opcional) ---------------------------------------
-  const sync = useCallback(
-    async (silent = false) => {
-      const token = getToken();
-      if (!token) {
-        if (!silent) flash('La conexión con Google ha caducado. Pulsa “Conectar Google”.');
-        return;
-      }
-      setSyncing(true);
-      try {
-        const n = await syncGoogle(me.id, token);
-        await cal.reload();
-        if (!silent) flash(`${n} eventos sincronizados desde Google Calendar.`);
-      } catch (e) {
-        flash((e as Error).message === 'TOKEN_EXPIRED' ? 'Google caducó. Pulsa “Conectar Google”.' : (e as Error).message);
-      } finally {
-        setSyncing(false);
-      }
-    },
-    [me.id, cal.reload], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  // Sincroniza al abrir si hay token válido y la última sincronización tiene >10 min
-  useEffect(() => {
-    if (GOOGLE_ENABLED && getToken() && Date.now() - lastSync() > 10 * 60 * 1000) void sync(true);
-  }, [sync]);
-
   // --- Navegación ------------------------------------------------------
   const shift = useCallback(
     (dir: number) =>
@@ -142,7 +113,7 @@ export default function Calendar({ session }: { session: Session }) {
   const openNew = useCallback((start: Date, end: Date, allDay = false) => {
     setModal({
       mine: true,
-      ev: { title: '', start_at: start.toISOString(), end_at: end.toISOString(), all_day: allDay, color: '#2563eb', visibility: 'private' },
+      ev: { title: '', start_at: start.toISOString(), end_at: end.toISOString(), all_day: allDay, color: EVENT_COLORS[0], visibility: 'busy' },
     });
   }, []);
 
@@ -182,16 +153,14 @@ export default function Calendar({ session }: { session: Session }) {
       ? cursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
       : `${from.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} – ${addDays(to, -1).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
-  const googleOk = GOOGLE_ENABLED && !!getToken();
-
   const onIcsFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    e.target.value = ''; // permite volver a elegir el mismo archivo
+    e.target.value = '';
     if (!file) return;
     try {
       const n = await importIcsFile(me.id, file);
       await cal.reload();
-      flash(`${n} eventos importados. Usa “Privacidad rápida” (barra lateral) para compartirlos con tus amigos.`);
+      flash(`${n} eventos importados. Se muestran a tus amigos como “Ocupado”; cámbialo en Privacidad rápida.`);
     } catch (err) {
       flash((err as Error).message);
     }
@@ -203,6 +172,7 @@ export default function Calendar({ session }: { session: Session }) {
         <button className="icon menu-btn" onClick={() => setSidebar((s) => !s)} aria-label="Amigos">
           ☰
         </button>
+        <span className="brand">Calendario</span>
         <button className="btn" onClick={() => setCursor(new Date())}>
           Hoy
         </button>
@@ -223,22 +193,12 @@ export default function Calendar({ session }: { session: Session }) {
             Semana
           </button>
         </div>
-        {GOOGLE_ENABLED &&
-          (googleOk ? (
-            <button className="btn" onClick={() => void sync()} disabled={syncing}>
-              {syncing ? 'Sincronizando…' : 'Sincronizar Google'}
-            </button>
-          ) : (
-            <button className="btn" onClick={() => void connectGoogleCalendar()}>
-              Conectar Google Calendar
-            </button>
-          ))}
-        <button className="btn" onClick={() => fileRef.current?.click()} title="Importa un archivo .ics exportado de Google, Apple u Outlook">
+        <button className="btn hide-sm" onClick={() => fileRef.current?.click()} title="Importa un archivo .ics exportado de Google, Apple u Outlook">
           Importar .ics
         </button>
         <input ref={fileRef} type="file" accept=".ics,text/calendar" hidden onChange={(e) => void onIcsFile(e)} />
         <button className="btn primary" onClick={() => openNew(new Date(Date.now() + 3600000), new Date(Date.now() + 7200000))}>
-          + Evento
+          Nuevo evento
         </button>
         <button className="btn" onClick={() => void supabase.auth.signOut()} title={me.email ?? ''}>
           Salir
@@ -278,6 +238,10 @@ export default function Calendar({ session }: { session: Session }) {
             onAdd={friends.add}
             onAccept={friends.accept}
             onRemove={friends.remove}
+            onPickSlot={(s, e) => {
+              setSidebar(false);
+              openNew(s, e);
+            }}
           />
           <h4>Privacidad rápida</h4>
           <select value="" onChange={(e) => e.target.value && void setAllVisibility(e.target.value as Visibility)}>
