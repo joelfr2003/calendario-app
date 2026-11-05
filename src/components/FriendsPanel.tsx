@@ -12,20 +12,26 @@ interface Props {
   hidden: Set<string>;
   colorOf: (id: string) => string;
   onToggle: (id: string) => void;
-  onAdd: (email: string) => Promise<string | null>;
+  onAdd: (query: string) => Promise<string | null>;
   onAccept: (friendshipId: string) => Promise<void>;
   onRemove: (friendshipId: string) => Promise<void>;
+  onPickSlot: (start: Date, end: Date) => void;
 }
 
-export default function FriendsPanel({ userId, rows, hidden, colorOf, onToggle, onAdd, onAccept, onRemove }: Props) {
-  const [email, setEmail] = useState('');
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6..23
+const pad = (h: number) => `${String(h).padStart(2, '0')}:00`;
+
+export default function FriendsPanel({ userId, rows, hidden, colorOf, onToggle, onAdd, onAccept, onRemove, onPickSlot }: Props) {
+  const [query, setQuery] = useState('');
   const [msg, setMsg] = useState('');
   const [minutes, setMinutes] = useState(60);
+  const [days, setDays] = useState(14);
+  const [h1, setH1] = useState(9);
+  const [h2, setH2] = useState(21);
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Enlace personal: quien lo abra y se registre puede pedirte ser tu amigo (tú lo aceptas)
   const shareLink = async () => {
     const link = inviteLink(userId);
     if (navigator.share) {
@@ -48,21 +54,25 @@ export default function FriendsPanel({ userId, rows, hidden, colorOf, onToggle, 
   const accepted = rows.filter((r) => r.friendship.status === 'accepted');
   const incoming = rows.filter((r) => r.friendship.status === 'pending' && r.incoming);
   const outgoing = rows.filter((r) => r.friendship.status === 'pending' && !r.incoming);
-  const name = (r: FriendRow) => r.profile.display_name || r.profile.email;
+  const name = (r: FriendRow) => r.profile.display_name || r.profile.username || r.profile.email;
+  const included = accepted.filter((r) => !hidden.has(r.profile.id));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const err = await onAdd(email);
+    const err = await onAdd(query);
     setMsg(err ?? 'Solicitud enviada.');
-    if (!err) setEmail('');
+    if (!err) setQuery('');
   };
 
-  // Huecos libres comunes entre tú y los amigos que tienes visibles, próximos 14 días
   const search = async () => {
+    if (h2 <= h1) {
+      setSlots([]);
+      return;
+    }
     setSearching(true);
     const from = new Date();
-    const to = addDays(from, 14);
-    const ids = accepted.map((r) => r.profile.id).filter((id) => !hidden.has(id));
+    const to = addDays(from, days);
+    const ids = included.map((r) => r.profile.id);
     const [mine, theirs] = await Promise.all([
       supabase.from('events').select('start_at,end_at,all_day').eq('owner', userId).lt('start_at', to.toISOString()).gt('end_at', from.toISOString()),
       ids.length
@@ -72,43 +82,40 @@ export default function FriendsPanel({ userId, rows, hidden, colorOf, onToggle, 
     const busy = [...((mine.data ?? []) as CalEvent[]), ...((theirs.data ?? []) as CalEvent[])]
       .filter((e) => !e.all_day)
       .map((e) => ({ start: new Date(e.start_at), end: new Date(e.end_at) }));
-    setSlots(findFreeSlots(busy, from, 14, minutes).slice(0, 12));
+    setSlots(findFreeSlots(busy, from, days, minutes, h1, h2).slice(0, 15));
     setSearching(false);
   };
 
   return (
     <div className="friends">
       <h3>Amigos</h3>
-      <div className="row">
-        <button className="btn small primary" onClick={() => void shareLink()}>
-          Invitar con mi enlace
-        </button>
-        {copied && <span className="small muted">¡Enlace copiado!</span>}
-      </div>
-      <p className="muted small">Envíaselo por WhatsApp: quien lo abra y entre podrá pedirte ser tu amigo.</p>
       {accepted.length === 0 && <p className="muted small">Aún no tienes amigos añadidos.</p>}
       {accepted.map((r) => (
         <div key={r.friendship.id} className="friend">
-          <label>
+          <label title={r.profile.username ? '@' + r.profile.username : ''}>
             <input type="checkbox" checked={!hidden.has(r.profile.id)} onChange={() => onToggle(r.profile.id)} />
             <i className="dot" style={{ background: colorOf(r.profile.id) }} />
             {name(r)}
           </label>
-          <button className="icon" title="Eliminar amigo" onClick={() => confirm(`¿Dejar de ser amigo de ${name(r)}?`) && void onRemove(r.friendship.id)}>
+          <button
+            className="icon"
+            title="Eliminar amigo"
+            onClick={() => confirm(`¿Dejar de ser amigo de ${name(r)}?`) && void onRemove(r.friendship.id)}
+          >
             ×
           </button>
         </div>
       ))}
 
-      {incoming.length > 0 && <h4>Solicitudes</h4>}
+      {incoming.length > 0 && <h4>Solicitudes recibidas</h4>}
       {incoming.map((r) => (
         <div key={r.friendship.id} className="friend">
           <span>{name(r)}</span>
-          <span>
+          <span className="row">
             <button className="btn small primary" onClick={() => void onAccept(r.friendship.id)}>
               Aceptar
             </button>
-            <button className="icon" onClick={() => void onRemove(r.friendship.id)}>
+            <button className="icon" title="Rechazar" onClick={() => void onRemove(r.friendship.id)}>
               ×
             </button>
           </span>
@@ -117,38 +124,86 @@ export default function FriendsPanel({ userId, rows, hidden, colorOf, onToggle, 
       {outgoing.map((r) => (
         <div key={r.friendship.id} className="friend muted small">
           <span>{name(r)} · pendiente</span>
-          <button className="icon" onClick={() => void onRemove(r.friendship.id)}>
+          <button className="icon" title="Cancelar solicitud" onClick={() => void onRemove(r.friendship.id)}>
             ×
           </button>
         </div>
       ))}
 
-      <form onSubmit={submit} className="add-friend">
-        <input type="email" required placeholder="email del amigo" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <h4>Añadir amigo</h4>
+      <form onSubmit={(e) => void submit(e)} className="add-friend">
+        <input required placeholder="@usuario o email" value={query} onChange={(e) => setQuery(e.target.value)} autoCapitalize="none" />
         <button className="btn small" type="submit">
-          Añadir
+          Enviar solicitud
         </button>
       </form>
       {msg && <p className="muted small">{msg}</p>}
-
-      <h4>Encontrar hueco libre</h4>
-      <div className="row">
-        <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-          <option value={30}>30 min</option>
-          <option value={60}>1 hora</option>
-          <option value={120}>2 horas</option>
-          <option value={180}>3 horas</option>
-        </select>
-        <button className="btn small" onClick={() => void search()} disabled={searching}>
-          {searching ? 'Buscando…' : 'Buscar'}
+      <div className="row" style={{ marginTop: 8 }}>
+        <button className="btn small" onClick={() => void shareLink()}>
+          Copiar mi enlace de invitación
         </button>
+        {copied && <span className="small muted">Enlace copiado</span>}
       </div>
-      <p className="muted small">Entre tú y los amigos marcados (9:00–21:00, próximos 14 días).</p>
-      {slots && slots.length === 0 && <p className="small">No hay huecos comunes.</p>}
+
+      <h4>Buscar hueco libre</h4>
+      <div className="grid2">
+        <label className="field small">
+          Duración
+          <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
+            <option value={30}>30 min</option>
+            <option value={60}>1 hora</option>
+            <option value={120}>2 horas</option>
+            <option value={180}>3 horas</option>
+          </select>
+        </label>
+        <label className="field small">
+          Próximos
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            <option value={7}>7 días</option>
+            <option value={14}>14 días</option>
+            <option value={30}>30 días</option>
+          </select>
+        </label>
+        <label className="field small">
+          Desde
+          <select value={h1} onChange={(e) => setH1(Number(e.target.value))}>
+            {HOURS.slice(0, -1).map((h) => (
+              <option key={h} value={h}>
+                {pad(h)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field small">
+          Hasta
+          <select value={h2} onChange={(e) => setH2(Number(e.target.value))}>
+            {HOURS.map((h) => (
+              <option key={h} value={h}>
+                {pad(h)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <button className="btn primary full" style={{ marginTop: 8 }} onClick={() => void search()} disabled={searching}>
+        {searching ? 'Buscando…' : `Buscar entre ${included.length + 1} ${included.length === 0 ? 'persona' : 'personas'}`}
+      </button>
+      <p className="muted small">
+        Cuenta tu agenda y la de los amigos marcados. De ellos solo se ven los eventos que comparten como «Ocupado» o con detalles.
+      </p>
+      {slots && slots.length === 0 && <p className="small">No hay huecos que cumplan esas condiciones.</p>}
       {slots?.map((s) => (
-        <div key={s.start.getTime()} className="slot small">
-          {fmtDay(s.start)} · {fmtTime(s.start)}–{fmtTime(s.end)}
-        </div>
+        <button
+          key={s.start.getTime()}
+          className="slot"
+          title="Crear un evento en este hueco"
+          onClick={() => onPickSlot(s.start, new Date(Math.min(s.end.getTime(), s.start.getTime() + minutes * 60000)))}
+        >
+          <span>{fmtDay(s.start)}</span>
+          <span className="tnum">
+            {fmtTime(s.start)}–{fmtTime(s.end)}
+          </span>
+        </button>
       ))}
     </div>
   );
