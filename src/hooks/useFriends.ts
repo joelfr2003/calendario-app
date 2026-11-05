@@ -20,7 +20,7 @@ export function useFriends(userId: string) {
       setRows([]);
       return;
     }
-    const { data: ps } = await supabase.from('profiles').select('id,email,display_name').in('id', ids);
+    const { data: ps } = await supabase.from('profiles').select('id,email,display_name,username').in('id', ids);
     const map = new Map(((ps ?? []) as Profile[]).map((p) => [p.id, p]));
     setRows(
       list
@@ -33,12 +33,12 @@ export function useFriends(userId: string) {
     void load();
   }, [load]);
 
-  /** Devuelve un mensaje de error, o null si todo fue bien */
-  const add = async (email: string): Promise<string | null> => {
-    const { data, error } = await supabase.rpc('find_profile_by_email', { p_email: email });
+  /** Busca por @usuario o email. Devuelve un mensaje de error, o null si todo fue bien */
+  const add = async (query: string): Promise<string | null> => {
+    const { data, error } = await supabase.rpc('find_profile', { p_q: query });
     if (error) return error.message;
     const target = ((data ?? []) as Profile[])[0];
-    if (!target) return 'No hay ningún usuario con ese email. Pídele que entre primero en la app.';
+    if (!target) return 'No existe ningún usuario con ese nombre de usuario o email.';
     if (rows.some((r) => r.profile.id === target.id)) return 'Ya existe una solicitud o amistad con esa persona.';
     const { error: e2 } = await supabase.from('friendships').insert({ requester: userId, addressee: target.id });
     if (e2) return e2.message;
