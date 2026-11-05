@@ -136,3 +136,24 @@ main { min-width: 0; min-height: 0; display: flex; flex-direction: column; paddi
   header { padding: 8px 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* Retoque visual */
+body { font-size: 15px; }
+.small { font-size: 13px; }
+h2 { text-transform: none; font-size: 18px; }
+h2::first-letter { text-transform: uppercase; }
+header { padding: 12px 20px; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 9px; font-size: 16px; }
+.brand::before { content: '31'; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700; }
+.sidebar { padding: 22px 20px; }
+.sidebar h3 { font-size: 16px; }
+h4 { font-size: 13px; margin: 26px 0 10px; padding-top: 18px; }
+.btn, input, select { height: 36px; }
+.btn.small { height: 30px; }
+select { appearance: none; padding-right: 30px; background-repeat: no-repeat; background-position: right 10px center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%238b949c' stroke-width='1.5'/%3E%3C/svg%3E"); }
+.month { border-radius: 10px; }
+.dow { padding: 10px 12px; }
+.cell { padding: 6px; }
+.cell:has(.num.today) { background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.num { font-size: 13px; }
+.chip { font-size: 12.5px; padding: 2px 7px; margin-top: 3px; border-radius: 4px; }
