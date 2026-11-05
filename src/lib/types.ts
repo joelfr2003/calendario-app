@@ -25,6 +25,7 @@ export interface Profile {
   id: string;
   email: string;
   display_name: string | null;
+  username: string | null;
 }
 
 export interface Friendship {
@@ -34,5 +35,5 @@ export interface Friendship {
   status: 'pending' | 'accepted';
 }
 
-export const EVENT_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#d97706', '#9333ea', '#0891b2', '#db2777', '#475569'];
-export const FRIEND_COLORS = ['#f97316', '#14b8a6', '#a855f7', '#ec4899', '#84cc16', '#06b6d4', '#eab308', '#ef4444'];
+export const EVENT_COLORS = ['#0b6e63', '#2f5fb3', '#a8590f', '#a3224b', '#6a45b8', '#56606b', '#3d7a1f', '#0f7490'];
+export const FRIEND_COLORS = ['#c2410c', '#7c4dcc', '#0369a1', '#be185d', '#4d7c0f', '#b7791f', '#0d9488', '#64748b'];
