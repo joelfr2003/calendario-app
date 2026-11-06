@@ -2,32 +2,57 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from '
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { importIcsFile } from './lib/importer';
+import { buildIcs } from './lib/export';
+import { norm } from './lib/queries';
 import { clearPendingInvite, getPendingInvite } from './lib/invite';
-import { addDays, monthGrid, startOfWeek } from './lib/dates';
-import { DisplayEvent, EVENT_COLORS, FRIEND_COLORS, NewEvent, Visibility } from './lib/types';
+import { addDays, monthGrid, startOfDay, startOfWeek } from './lib/dates';
+import { DisplayEvent, EVENT_COLORS, FRIEND_COLORS, NewEvent, Scope, Visibility } from './lib/types';
 import { useCalendar } from './hooks/useCalendar';
 import { useFriends } from './hooks/useFriends';
+import { askNotifications, useReminders } from './hooks/useReminders';
 import CalendarView from './components/CalendarView';
 import EventModal from './components/EventModal';
 import FriendsPanel from './components/FriendsPanel';
+import MiniCalendar from './components/MiniCalendar';
 
-type View = 'month' | 'week';
+type View = 'month' | 'week' | 'day' | 'agenda';
+const VIEWS: { id: View; label: string }[] = [
+  { id: 'month', label: 'Mes' },
+  { id: 'week', label: 'Semana' },
+  { id: 'day', label: 'Día' },
+  { id: 'agenda', label: 'Agenda' },
+];
 interface ModalState {
   ev: NewEvent;
   mine: boolean;
   ownerName?: string;
+  k: number;
 }
+interface Hit {
+  id: string;
+  title: string;
+  start_at: string;
+  color: string;
+}
+const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString('es-ES', o);
 
 export default function Calendar({ session }: { session: Session }) {
   const me = session.user;
-  const [view, setView] = useState<View>(() => (localStorage.getItem('view') === 'week' ? 'week' : 'month'));
+  const [view, setView] = useState<View>(() => {
+    const v = localStorage.getItem('view') as View | null;
+    return v && VIEWS.some((x) => x.id === v) ? v : 'month';
+  });
   const [cursor, setCursor] = useState(() => new Date());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<ModalState | null>(null);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ msg: string; undo: boolean } | null>(null);
   const [sidebar, setSidebar] = useState(false);
   const [invite, setInvite] = useState<{ id: string; name: string } | null>(null);
+  const [q, setQ] = useState('');
+  const [hits, setHits] = useState<Hit[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const toastTimer = useRef<number>();
 
   const friends = useFriends(me.id);
   const accepted = useMemo(() => friends.rows.filter((r) => r.friendship.status === 'accepted'), [friends.rows]);
@@ -52,8 +77,12 @@ export default function Calendar({ session }: { session: Session }) {
       const s = monthGrid(cursor)[0];
       return { from: s, to: addDays(s, 42) };
     }
-    const s = startOfWeek(cursor);
-    return { from: s, to: addDays(s, 7) };
+    if (view === 'week') {
+      const s = startOfWeek(cursor);
+      return { from: s, to: addDays(s, 7) };
+    }
+    const s = startOfDay(cursor);
+    return { from: s, to: addDays(s, view === 'day' ? 1 : 30) };
   }, [view, cursor]);
 
   const cal = useCalendar(me.id, from, to, visibleIds);
@@ -66,12 +95,20 @@ export default function Calendar({ session }: { session: Session }) {
     [cal.own, cal.others, colorOf, nameOf],
   );
 
-  const flash = (m: string) => {
-    setToast(m);
-    setTimeout(() => setToast(''), 4000);
-  };
+  const flash = useCallback((msg: string, undo = false) => {
+    setToast({ msg, undo });
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), undo ? 7000 : 4500);
+  }, []);
 
-  // --- Enlace de invitación (?add=ID, guardado por main.tsx antes del login) ---
+  useReminders(me.id, flash);
+
+  const doUndo = useCallback(async () => {
+    const ok = await cal.undo();
+    flash(ok ? 'Cambio deshecho.' : 'No hay nada que deshacer.');
+  }, [cal.undo, flash]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Enlace de invitación ---
   useEffect(() => {
     const id = getPendingInvite();
     if (!id) return;
@@ -100,31 +137,68 @@ export default function Calendar({ session }: { session: Session }) {
     setInvite(null);
   };
 
-  // --- Navegación ------------------------------------------------------
+  // --- Búsqueda ---
+  useEffect(() => {
+    const t = q.trim().replace(/[,()%*]/g, ' ');
+    if (t.length < 2) {
+      setHits([]);
+      return;
+    }
+    const h = window.setTimeout(async () => {
+      const { data } = await supabase
+        .from('events')
+        .select('id,title,start_at,color')
+        .eq('owner', me.id)
+        .or(`title.ilike.%${t}%,location.ilike.%${t}%`)
+        .order('start_at', { ascending: false })
+        .limit(8);
+      setHits((data ?? []) as Hit[]);
+    }, 250);
+    return () => window.clearTimeout(h);
+  }, [q, me.id]);
+
+  // --- Navegación ---
   const shift = useCallback(
     (dir: number) =>
-      setCursor((c) => (view === 'month' ? new Date(c.getFullYear(), c.getMonth() + dir, 1) : addDays(c, 7 * dir))),
+      setCursor((c) => {
+        if (view === 'month') return new Date(c.getFullYear(), c.getMonth() + dir, 1);
+        return addDays(c, dir * (view === 'week' ? 7 : view === 'day' ? 1 : 30));
+      }),
     [view],
   );
-  const changeView = (v: View) => {
+  const changeView = useCallback((v: View) => {
     setView(v);
     localStorage.setItem('view', v);
-  };
-  const openNew = useCallback((start: Date, end: Date, allDay = false) => {
-    setModal({
-      mine: true,
-      ev: { title: '', start_at: start.toISOString(), end_at: end.toISOString(), all_day: allDay, color: EVENT_COLORS[0], visibility: 'busy' },
-    });
   }, []);
+  const openModal = useCallback((s: Omit<ModalState, 'k'>) => setModal({ ...s, k: Date.now() }), []);
+  const openNew = useCallback(
+    (start: Date, end: Date, allDay = false) =>
+      openModal({
+        mine: true,
+        ev: { title: '', start_at: start.toISOString(), end_at: end.toISOString(), all_day: allDay, color: EVENT_COLORS[0], visibility: 'busy' },
+      }),
+    [openModal],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (modal || e.metaKey || e.ctrlKey || e.altKey || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing && !modal) {
+        e.preventDefault();
+        void doUndo();
+        return;
+      }
+      if (modal || typing || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 't') setCursor(new Date());
       else if (e.key === 'm') changeView('month');
       else if (e.key === 'w') changeView('week');
-      else if (e.key === 'ArrowLeft') shift(-1);
+      else if (e.key === 'd') changeView('day');
+      else if (e.key === 'a') changeView('agenda');
+      else if (e.key === '/') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === 'ArrowLeft') shift(-1);
       else if (e.key === 'ArrowRight') shift(1);
       else if (e.key === 'n') {
         const s = new Date();
@@ -135,7 +209,32 @@ export default function Calendar({ session }: { session: Session }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modal, shift, openNew]);
+  }, [modal, shift, openNew, changeView, doUndo]);
+
+  // --- Acciones sobre eventos ---
+  const onSave = async (ev: NewEvent & { title: string }, scope: Scope) => {
+    await cal.save(ev, scope);
+    if (ev.reminder_min != null) askNotifications();
+    flash('Evento guardado.', true);
+  };
+  const onDelete = async (id: string, scope: Scope, occ?: string) => {
+    await cal.remove(id, scope, occ);
+    flash('Evento eliminado.', true);
+  };
+  const onMove = async (ev: DisplayEvent, s: Date, e: Date) => {
+    if (!ev.mine) return;
+    const scope: Scope = ev.recurrence
+      ? confirm('Este evento se repite.\n\nAceptar: mover solo este evento.\nCancelar: mover toda la serie.')
+        ? 'one'
+        : 'all'
+      : 'all';
+    try {
+      await cal.save({ ...ev, id: ev.seriesId, start_at: s.toISOString(), end_at: e.toISOString() }, scope);
+      flash('Evento actualizado.', true);
+    } catch (err) {
+      flash((err as Error).message);
+    }
+  };
 
   const setAllVisibility = async (v: Visibility) => {
     const label = { private: 'privados', busy: 'visibles como “Ocupado”', friends: 'visibles con detalles' }[v];
@@ -148,11 +247,6 @@ export default function Calendar({ session }: { session: Session }) {
     }
   };
 
-  const title =
-    view === 'month'
-      ? cursor.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
-      : `${from.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} – ${addDays(to, -1).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-
   const onIcsFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -160,16 +254,42 @@ export default function Calendar({ session }: { session: Session }) {
     try {
       const n = await importIcsFile(me.id, file);
       await cal.reload();
-      flash(`${n} eventos importados. Se muestran a tus amigos como “Ocupado”; cámbialo en Privacidad rápida.`);
+      flash(`${n} eventos importados. Tus amigos los ven como “Ocupado”; cámbialo en Privacidad rápida.`);
     } catch (err) {
       flash((err as Error).message);
     }
   };
 
+  const exportIcs = async () => {
+    let all: Record<string, unknown>[] = [];
+    for (let i = 0; ; i += 1000) {
+      const { data, error } = await supabase.from('events').select('*').eq('owner', me.id).range(i, i + 999);
+      if (error) return flash(error.message);
+      all = all.concat((data ?? []) as Record<string, unknown>[]);
+      if ((data ?? []).length < 1000) break;
+    }
+    const url = URL.createObjectURL(new Blob([buildIcs(all.map(norm))], { type: 'text/calendar' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'calendario.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+    flash(`${all.length} eventos exportados.`);
+  };
+
+  const title =
+    view === 'month'
+      ? fmt(cursor, { month: 'long', year: 'numeric' })
+      : view === 'week'
+        ? `${fmt(from, { day: 'numeric', month: 'short' })} – ${fmt(addDays(to, -1), { day: 'numeric', month: 'short', year: 'numeric' })}`
+        : view === 'day'
+          ? fmt(cursor, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+          : 'Próximos 30 días';
+
   return (
     <div className="app">
       <header>
-        <button className="icon menu-btn" onClick={() => setSidebar((s) => !s)} aria-label="Amigos">
+        <button className="icon menu-btn" onClick={() => setSidebar((s) => !s)} aria-label="Menú">
           ☰
         </button>
         <span className="brand">Calendario</span>
@@ -185,18 +305,41 @@ export default function Calendar({ session }: { session: Session }) {
         <h2>{title}</h2>
         {cal.loading && <span className="muted small">…</span>}
         <span className="grow" />
-        <div className="seg">
-          <button className={view === 'month' ? 'on' : ''} onClick={() => changeView('month')}>
-            Mes
-          </button>
-          <button className={view === 'week' ? 'on' : ''} onClick={() => changeView('week')}>
-            Semana
-          </button>
+        <div className="search hide-sm">
+          <input
+            ref={searchRef}
+            type="search"
+            placeholder="Buscar eventos  ( / )"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && (setQ(''), searchRef.current?.blur())}
+          />
+          {q.trim().length >= 2 && (
+            <div className="search-results">
+              {hits.length === 0 && <div className="sr-empty">Sin resultados</div>}
+              {hits.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => {
+                    setCursor(new Date(h.start_at));
+                    setQ('');
+                  }}
+                >
+                  <i className="dot" style={{ background: h.color }} />
+                  <span className="sr-t">{h.title}</span>
+                  <span className="muted small">{fmt(new Date(h.start_at), { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <button className="btn hide-sm" onClick={() => fileRef.current?.click()} title="Importa un archivo .ics exportado de Google, Apple u Outlook">
-          Importar .ics
-        </button>
-        <input ref={fileRef} type="file" accept=".ics,text/calendar" hidden onChange={(e) => void onIcsFile(e)} />
+        <div className="seg">
+          {VIEWS.map((v) => (
+            <button key={v.id} className={view === v.id ? 'on' : ''} onClick={() => changeView(v.id)}>
+              {v.label}
+            </button>
+          ))}
+        </div>
         <button className="btn primary" onClick={() => openNew(new Date(Date.now() + 3600000), new Date(Date.now() + 7200000))}>
           Nuevo evento
         </button>
@@ -223,6 +366,14 @@ export default function Calendar({ session }: { session: Session }) {
 
       <div className="body">
         <aside className={'sidebar' + (sidebar ? ' open' : '')}>
+          <MiniCalendar
+            cursor={cursor}
+            view={view}
+            onPick={(d) => {
+              setCursor(d);
+              setSidebar(false);
+            }}
+          />
           <FriendsPanel
             userId={me.id}
             rows={friends.rows}
@@ -250,8 +401,18 @@ export default function Calendar({ session }: { session: Session }) {
             <option value="friends">Con título y detalles</option>
             <option value="private">Privado (nadie lo ve)</option>
           </select>
+          <h4>Datos</h4>
+          <div className="row">
+            <button className="btn small" onClick={() => fileRef.current?.click()}>
+              Importar .ics
+            </button>
+            <button className="btn small" onClick={() => void exportIcs()}>
+              Exportar .ics
+            </button>
+          </div>
+          <input ref={fileRef} type="file" accept=".ics,text/calendar" hidden onChange={(e) => void onIcsFile(e)} />
           <p className="muted small">
-            Atajos: <kbd>t</kbd> hoy · <kbd>m</kbd> mes · <kbd>w</kbd> semana · <kbd>n</kbd> nuevo · ← →
+            Atajos: <kbd>t</kbd> hoy · <kbd>m</kbd> <kbd>w</kbd> <kbd>d</kbd> <kbd>a</kbd> vistas · <kbd>n</kbd> nuevo · <kbd>/</kbd> buscar · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer
           </p>
         </aside>
 
@@ -262,22 +423,32 @@ export default function Calendar({ session }: { session: Session }) {
             cursor={cursor}
             events={events}
             onCreate={openNew}
-            onOpen={(ev) => setModal({ mine: ev.mine, ownerName: ev.ownerName, ev })}
+            onMove={(ev, s, e) => void onMove(ev, s, e)}
+            onOpen={(ev) => openModal({ mine: ev.mine, ownerName: ev.ownerName, ev })}
           />
         </main>
       </div>
 
       {modal && (
         <EventModal
+          key={modal.k}
           initial={modal.ev}
           readOnly={!modal.mine}
           ownerName={modal.ownerName}
-          onSave={cal.save}
-          onDelete={cal.remove}
+          onSave={onSave}
+          onDelete={onDelete}
+          onDuplicate={(ev) => openModal({ mine: true, ev })}
           onClose={() => setModal(null)}
         />
       )}
-      {toast && <div className="toast">{toast}</div>}
+      {toast && (
+        <div className="toast">
+          <span>{toast.msg}</span>
+          {toast.undo && cal.canUndo && (
+            <button onClick={() => void doUndo()}>Deshacer</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

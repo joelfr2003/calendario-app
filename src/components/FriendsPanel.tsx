@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { fetchFriends, fetchOwn } from '../lib/queries';
+import { expand } from '../lib/recur';
 import { addDays, fmtDay, fmtTime } from '../lib/dates';
 import { findFreeSlots, Slot } from '../lib/free';
 import type { CalEvent } from '../lib/types';
@@ -74,12 +75,10 @@ export default function FriendsPanel({ userId, rows, hidden, colorOf, onToggle, 
     const to = addDays(from, days);
     const ids = included.map((r) => r.profile.id);
     const [mine, theirs] = await Promise.all([
-      supabase.from('events').select('start_at,end_at,all_day').eq('owner', userId).lt('start_at', to.toISOString()).gt('end_at', from.toISOString()),
-      ids.length
-        ? supabase.rpc('get_friend_events', { friend_ids: ids, range_start: from.toISOString(), range_end: to.toISOString() })
-        : Promise.resolve({ data: [] }),
+      fetchOwn(userId, from, to),
+      ids.length ? fetchFriends(ids, from, to) : Promise.resolve({ data: [] as CalEvent[], error: null }),
     ]);
-    const busy = [...((mine.data ?? []) as CalEvent[]), ...((theirs.data ?? []) as CalEvent[])]
+    const busy = expand([...mine.data, ...theirs.data], from, to)
       .filter((e) => !e.all_day)
       .map((e) => ({ start: new Date(e.start_at), end: new Date(e.end_at) }));
     setSlots(findFreeSlots(busy, from, days, minutes, h1, h2).slice(0, 15));

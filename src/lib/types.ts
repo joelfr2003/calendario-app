@@ -1,25 +1,43 @@
 export type Visibility = 'private' | 'busy' | 'friends';
+export type Scope = 'one' | 'all';
+
+export interface Recurrence {
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval: number;
+  days?: number[]; // semanal: 0 = domingo … 6 = sábado
+  until?: string | null; // YYYY-MM-DD
+}
 
 export interface CalEvent {
   id: string;
   owner: string;
   title: string;
   description: string | null;
+  location: string | null;
   start_at: string; // ISO
   end_at: string; // ISO
   all_day: boolean;
   color: string;
   visibility: Visibility;
+  recurrence: Recurrence | null;
+  exdates: string[];
+  reminder_min: number | null;
   google_event_id?: string | null;
 }
 
-export interface DisplayEvent extends CalEvent {
+/** Una ocurrencia concreta (los eventos repetidos se expanden en el cliente) */
+export interface Instance extends CalEvent {
+  seriesId: string;
+  occStart: string;
+}
+
+export interface DisplayEvent extends Instance {
   mine: boolean;
   displayColor: string;
   ownerName?: string;
 }
 
-export type NewEvent = Partial<CalEvent> & Pick<CalEvent, 'start_at' | 'end_at'>;
+export type NewEvent = Partial<CalEvent> & Pick<CalEvent, 'start_at' | 'end_at'> & { seriesId?: string; occStart?: string };
 
 export interface Profile {
   id: string;
