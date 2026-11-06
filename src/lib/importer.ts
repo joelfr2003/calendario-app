@@ -3,11 +3,11 @@ import { addDays } from './dates';
 import { parseIcs } from './ics';
 
 /**
- * Importa un archivo .ics (Google Calendar, Apple, Outlook…): de hace 3 meses a 1 año vista.
- * Usa la columna google_event_id como identificador externo ("ics:UID:inicio"), así que
- * importar el mismo archivo dos veces actualiza los eventos en lugar de duplicarlos.
+ * Importa un archivo .ics (Google Calendar, Apple, Outlook…) dentro del calendario indicado:
+ * de hace 3 meses a 1 año vista. Importar el mismo archivo otra vez actualiza los eventos
+ * (si lo importas en otro calendario, se mueven a ese calendario) en lugar de duplicarlos.
  */
-export async function importIcsFile(userId: string, file: File): Promise<number> {
+export async function importIcsFile(userId: string, file: File, calendarId?: string): Promise<number> {
   if (file.size > 15 * 1024 * 1024) throw new Error('El archivo es demasiado grande (máximo 15 MB).');
   const text = await file.text();
   const events = parseIcs(text, addDays(new Date(), -90), addDays(new Date(), 365));
@@ -29,6 +29,7 @@ export async function importIcsFile(userId: string, file: File): Promise<number>
         start_at: e.start.toISOString(),
         end_at: e.end.toISOString(),
         all_day: e.allDay,
+        ...(calendarId ? { calendar_id: calendarId } : {}),
       },
     ];
   });

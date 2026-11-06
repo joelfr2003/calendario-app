@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { importIcsFile } from './lib/importer';
@@ -62,7 +62,6 @@ export default function Calendar({ session }: { session: Session }) {
   const [invite, setInvite] = useState<{ id: string; name: string } | null>(null);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<number>();
 
@@ -276,17 +275,10 @@ export default function Calendar({ session }: { session: Session }) {
     }
   };
 
-  const onIcsFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    try {
-      const n = await importIcsFile(me.id, file);
-      await cal.reload();
-      flash(`${n} eventos importados. Tus amigos los ven como “Ocupado”; cámbialo en Privacidad rápida.`);
-    } catch (err) {
-      flash((err as Error).message);
-    }
+  const importInto = async (calId: string, file: File) => {
+    const n = await importIcsFile(me.id, file, calId);
+    await cal.reload();
+    flash(`${n} eventos importados en “${calMap.get(calId)?.name ?? 'el calendario'}”.`);
   };
 
   const exportIcs = async () => {
@@ -444,15 +436,10 @@ export default function Calendar({ session }: { session: Session }) {
             <option value="private">Privado (nadie lo ve)</option>
           </select>
           <h4>Datos</h4>
-          <div className="row">
-            <button className="btn small" onClick={() => fileRef.current?.click()}>
-              Importar .ics
-            </button>
-            <button className="btn small" onClick={() => void exportIcs()}>
-              Exportar .ics
-            </button>
-          </div>
-          <input ref={fileRef} type="file" accept=".ics,text/calendar" hidden onChange={(e) => void onIcsFile(e)} />
+          <button className="btn small" onClick={() => void exportIcs()}>
+            Exportar todo (.ics)
+          </button>
+          <p className="muted small">Para importar un .ics, abre “Gestionar y compartir” y elige el calendario de destino.</p>
           {install.canInstall && (
             <>
               <h4>Aplicación</h4>
@@ -506,6 +493,7 @@ export default function Calendar({ session }: { session: Session }) {
           api={calsApi}
           friends={accepted.map((r) => ({ id: r.profile.id, name: r.profile.display_name || r.profile.username || r.profile.email }))}
           onError={flash}
+          onImport={importInto}
           onClose={() => {
             setShowCals(false);
             void cal.reload();

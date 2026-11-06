@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { EVENT_COLORS } from '../lib/types';
 import type { Cal } from '../lib/types';
 import type { useCalendars } from '../hooks/useCalendars';
@@ -7,11 +7,14 @@ interface Props {
   api: ReturnType<typeof useCalendars>;
   friends: { id: string; name: string }[];
   onError: (m: string) => void;
+  onImport: (calendarId: string, file: File) => Promise<void>;
   onClose: () => void;
 }
 
-export default function CalendarsModal({ api, friends, onError, onClose }: Props) {
+export default function CalendarsModal({ api, friends, onError, onImport, onClose }: Props) {
   const [name, setName] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pending = useRef('');
   const run = (p: Promise<void>) => p.catch((e: Error) => onError(e.message));
 
   return (
@@ -62,6 +65,18 @@ export default function CalendarsModal({ api, friends, onError, onClose }: Props
                   />
                 ))}
               </div>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => {
+                    pending.current = c.id;
+                    fileRef.current?.click();
+                  }}
+                >
+                  Importar .ics en este calendario
+                </button>
+              </div>
               <div className="frow">
                 <span className="lbl">Compartido</span>
                 <select value={c.share} onChange={(e) => void run(api.setShare(c.id, e.target.value as Cal['share'], sel))}>
@@ -93,6 +108,18 @@ export default function CalendarsModal({ api, friends, onError, onClose }: Props
           );
         })}
 
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".ics,text/calendar"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            const id = pending.current;
+            e.target.value = '';
+            if (f && id) void run(onImport(id, f));
+          }}
+        />
         <form
           className="row"
           onSubmit={(e) => {
