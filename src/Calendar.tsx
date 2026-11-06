@@ -281,10 +281,10 @@ export default function Calendar({ session }: { session: Session }) {
     flash(`${n} eventos importados en “${calMap.get(calId)?.name ?? 'el calendario'}”.`);
   };
 
-  const exportIcs = async () => {
+  const exportCalendar = async (calId: string) => {
     let all: Record<string, unknown>[] = [];
     for (let i = 0; ; i += 1000) {
-      const { data, error } = await supabase.from('events').select('*').eq('owner', me.id).range(i, i + 999);
+      const { data, error } = await supabase.from('events').select('*').eq('owner', me.id).eq('calendar_id', calId).range(i, i + 999);
       if (error) return flash(error.message);
       all = all.concat((data ?? []) as Record<string, unknown>[]);
       if ((data ?? []).length < 1000) break;
@@ -292,7 +292,7 @@ export default function Calendar({ session }: { session: Session }) {
     const url = URL.createObjectURL(new Blob([buildIcs(all.map(norm))], { type: 'text/calendar' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'calendario.ics';
+    a.download = `${(calMap.get(calId)?.name ?? 'calendario').replace(/[^\w-]+/g, '_')}.ics`;
     a.click();
     URL.revokeObjectURL(url);
     flash(`${all.length} eventos exportados.`);
@@ -368,6 +368,7 @@ export default function Calendar({ session }: { session: Session }) {
         <button className="avatar" onClick={() => setShowProfile(true)} title={me.email ?? 'Mi perfil'} aria-label="Mi perfil">
           {(me.email ?? '?')[0].toUpperCase()}
         </button>
+        <span className="hbreak" />
       </header>
 
       {invite && (
@@ -435,11 +436,6 @@ export default function Calendar({ session }: { session: Session }) {
             <option value="friends">Con título y detalles</option>
             <option value="private">Privado (nadie lo ve)</option>
           </select>
-          <h4>Datos</h4>
-          <button className="btn small" onClick={() => void exportIcs()}>
-            Exportar todo (.ics)
-          </button>
-          <p className="muted small">Para importar un .ics, abre “Gestionar y compartir” y elige el calendario de destino.</p>
           {install.canInstall && (
             <>
               <h4>Aplicación</h4>
@@ -494,6 +490,7 @@ export default function Calendar({ session }: { session: Session }) {
           friends={accepted.map((r) => ({ id: r.profile.id, name: r.profile.display_name || r.profile.username || r.profile.email }))}
           onError={flash}
           onImport={importInto}
+          onExport={exportCalendar}
           onClose={() => {
             setShowCals(false);
             void cal.reload();

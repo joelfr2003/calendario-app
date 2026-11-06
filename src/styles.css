@@ -298,3 +298,17 @@ button { touch-action: manipulation; }
   .modal, .modal.wide { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
   .toast { left: 12px; right: 12px; bottom: calc(88px + env(safe-area-inset-bottom)); max-width: none; }
 }
+
+/* ===== Móvil v2 ===== */
+.hbreak { display: none; }
+@media (max-width: 800px) {
+  .body { grid-template-columns: 1fr; }
+  header { gap: 6px; row-gap: 8px; }
+  .menu-btn { order: 1; }
+  h2 { order: 2; font-size: 18px; margin: 0 0 0 2px; }
+  .avatar { order: 3; }
+  .hbreak { display: block; order: 4; flex-basis: 100%; height: 0; }
+  header > .btn:not(.fab) { order: 5; }
+  header > .icon:not(.menu-btn) { order: 6; }
+  .seg { order: 7; flex: 1; width: auto; }
+}

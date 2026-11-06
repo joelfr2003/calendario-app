@@ -8,10 +8,11 @@ interface Props {
   friends: { id: string; name: string }[];
   onError: (m: string) => void;
   onImport: (calendarId: string, file: File) => Promise<void>;
+  onExport: (calendarId: string) => Promise<void>;
   onClose: () => void;
 }
 
-export default function CalendarsModal({ api, friends, onError, onImport, onClose }: Props) {
+export default function CalendarsModal({ api, friends, onError, onImport, onExport, onClose }: Props) {
   const [name, setName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const pending = useRef('');
@@ -75,6 +76,9 @@ export default function CalendarsModal({ api, friends, onError, onImport, onClos
                   }}
                 >
                   Importar .ics en este calendario
+                </button>
+                <button type="button" className="btn small" onClick={() => void run(onExport(c.id))}>
+                  Exportar .ics
                 </button>
               </div>
               <div className="frow">
