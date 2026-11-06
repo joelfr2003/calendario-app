@@ -53,5 +53,5 @@ export interface Friendship {
   status: 'pending' | 'accepted';
 }
 
-export const EVENT_COLORS = ['#0b6e63', '#2f5fb3', '#a8590f', '#a3224b', '#6a45b8', '#56606b', '#3d7a1f', '#0f7490'];
-export const FRIEND_COLORS = ['#c2410c', '#7c4dcc', '#0369a1', '#be185d', '#4d7c0f', '#b7791f', '#0d9488', '#64748b'];
+export const EVENT_COLORS = ['#1a73e8', '#188038', '#d93025', '#e37400', '#8430ce', '#129eaf', '#c2185b', '#5f6368'];
+export const FRIEND_COLORS = ['#e37400', '#8430ce', '#129eaf', '#c2185b', '#188038', '#d93025', '#1a73e8', '#5f6368'];
