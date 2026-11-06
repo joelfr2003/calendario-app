@@ -69,6 +69,7 @@ export function useCalendar(userId: string, from: Date, to: Date, friendIds: str
         visibility: ev.visibility ?? 'busy',
         recurrence: ev.recurrence ?? null,
         reminder_min: ev.reminder_min ?? null,
+        ...(ev.calendar_id ? { calendar_id: ev.calendar_id } : {}),
       };
       if (!ev.id) {
         const { data, error: e } = await supabase.from('events').insert({ ...base, owner: userId }).select('id').single();

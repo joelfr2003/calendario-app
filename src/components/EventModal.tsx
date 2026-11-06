@@ -1,11 +1,12 @@
 import { FormEvent, useState } from 'react';
 import { addDays, toDateInput, toLocalInput } from '../lib/dates';
-import { EVENT_COLORS, NewEvent, Recurrence, Scope, Visibility } from '../lib/types';
+import { Cal, EVENT_COLORS, NewEvent, Recurrence, Scope, Visibility } from '../lib/types';
 
 interface Props {
   initial: NewEvent;
   readOnly: boolean;
   ownerName?: string;
+  calendars: Cal[];
   onSave: (ev: NewEvent & { title: string }, scope: Scope) => Promise<void>;
   onDelete: (id: string, scope: Scope, occStart?: string) => Promise<void>;
   onDuplicate: (ev: NewEvent) => void;
@@ -16,7 +17,7 @@ const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
 const UNIT = { daily: 'días', weekly: 'semanas', monthly: 'meses', yearly: 'años' };
 type Freq = 'none' | Recurrence['freq'];
 
-export default function EventModal({ initial, readOnly, ownerName, onSave, onDelete, onDuplicate, onClose }: Props) {
+export default function EventModal({ initial, readOnly, ownerName, calendars, onSave, onDelete, onDuplicate, onClose }: Props) {
   const seriesId = initial.seriesId;
   const isSeries = !!seriesId && !!initial.recurrence;
   const r0 = initial.recurrence ?? null;
@@ -25,7 +26,7 @@ export default function EventModal({ initial, readOnly, ownerName, onSave, onDel
   const [description, setDescription] = useState(initial.description ?? '');
   const [location, setLocation] = useState(initial.location ?? '');
   const [allDay, setAllDay] = useState(initial.all_day ?? false);
-  const [color, setColor] = useState(initial.color ?? EVENT_COLORS[0]);
+  const [calendarId, setCalendarId] = useState(initial.calendar_id ?? calendars[0]?.id ?? '');
   const [visibility, setVisibility] = useState<Visibility>(initial.visibility ?? 'busy');
   const [reminder, setReminder] = useState(initial.reminder_min == null ? '' : String(initial.reminder_min));
   const [freq, setFreq] = useState<Freq>(r0?.freq ?? 'none');
@@ -79,7 +80,8 @@ export default function EventModal({ initial, readOnly, ownerName, onSave, onDel
           description: description || null,
           location: location.trim() || null,
           all_day: allDay,
-          color,
+          color: calendars.find((c) => c.id === calendarId)?.color ?? initial.color ?? EVENT_COLORS[0],
+          calendar_id: calendarId || undefined,
           visibility,
           reminder_min: reminder === '' ? null : Number(reminder),
           recurrence: rec,
@@ -218,19 +220,14 @@ export default function EventModal({ initial, readOnly, ownerName, onSave, onDel
               </select>
             </div>
             <div className="frow">
-              <span className="lbl">Color</span>
-              <div className="row">
-                {EVENT_COLORS.map((c) => (
-                  <button
-                    type="button"
-                    key={c}
-                    className={'swatch' + (c === color ? ' on' : '')}
-                    style={{ background: c }}
-                    onClick={() => setColor(c)}
-                    aria-label={`Color ${c}`}
-                  />
+              <span className="lbl">Calendario</span>
+              <select value={calendarId} onChange={(e) => setCalendarId(e.target.value)}>
+                {calendars.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
             <div className="frow">
               <span className="lbl">Visible para</span>

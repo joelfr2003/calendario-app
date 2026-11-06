@@ -14,6 +14,7 @@ export interface CalEvent {
   title: string;
   description: string | null;
   location: string | null;
+  calendar_id: string | null;
   start_at: string; // ISO
   end_at: string; // ISO
   all_day: boolean;
@@ -38,6 +39,14 @@ export interface DisplayEvent extends Instance {
 }
 
 export type NewEvent = Partial<CalEvent> & Pick<CalEvent, 'start_at' | 'end_at'> & { seriesId?: string; occStart?: string };
+
+export interface Cal {
+  id: string;
+  owner: string;
+  name: string;
+  color: string;
+  share: 'none' | 'all' | 'some';
+}
 
 export interface Profile {
   id: string;

@@ -9,6 +9,10 @@ import { addDays, monthGrid, startOfDay, startOfWeek } from './lib/dates';
 import { DisplayEvent, EVENT_COLORS, FRIEND_COLORS, NewEvent, Scope, Visibility } from './lib/types';
 import { useCalendar } from './hooks/useCalendar';
 import { useFriends } from './hooks/useFriends';
+import { useCalendars } from './hooks/useCalendars';
+import CalendarsModal from './components/CalendarsModal';
+import ProfileModal from './components/ProfileModal';
+import { useInstall } from './hooks/useInstall';
 import { askNotifications, useReminders } from './hooks/useReminders';
 import CalendarView from './components/CalendarView';
 import EventModal from './components/EventModal';
@@ -34,13 +38,21 @@ interface Hit {
   start_at: string;
   color: string;
 }
+const loadHidden = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem('hiddenCals') ?? '[]') as string[]);
+  } catch {
+    return new Set<string>();
+  }
+};
 const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString('es-ES', o);
 
 export default function Calendar({ session }: { session: Session }) {
   const me = session.user;
   const [view, setView] = useState<View>(() => {
     const v = localStorage.getItem('view') as View | null;
-    return v && VIEWS.some((x) => x.id === v) ? v : 'month';
+    const pick: View = v && VIEWS.some((x) => x.id === v) ? v : 'month';
+    return pick === 'week' && window.matchMedia('(max-width: 800px)').matches ? 'day' : pick;
   });
   const [cursor, setCursor] = useState(() => new Date());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -55,6 +67,21 @@ export default function Calendar({ session }: { session: Session }) {
   const toastTimer = useRef<number>();
 
   const friends = useFriends(me.id);
+  const calsApi = useCalendars(me.id);
+  const install = useInstall();
+  const [showProfile, setShowProfile] = useState(false);
+  const calMap = useMemo(() => new Map(calsApi.cals.map((c) => [c.id, c])), [calsApi.cals]);
+  const [hiddenCals, setHiddenCals] = useState<Set<string>>(loadHidden);
+  const [showCals, setShowCals] = useState(false);
+  const toggleCal = (id: string) =>
+    setHiddenCals((h) => {
+      const n = new Set(h);
+      n.has(id) ? n.delete(id) : n.add(id);
+      localStorage.setItem('hiddenCals', JSON.stringify([...n]));
+      return n;
+    });
+  const shareLabel = (c: { id: string; share: string }) =>
+    c.share === 'all' ? 'Todos' : c.share === 'some' ? `${(calsApi.shares[c.id] ?? []).length} amigos` : 'Privado';
   const accepted = useMemo(() => friends.rows.filter((r) => r.friendship.status === 'accepted'), [friends.rows]);
   const visibleIds = useMemo(
     () => accepted.map((r) => r.profile.id).filter((id) => !hidden.has(id)).sort(),
@@ -89,10 +116,12 @@ export default function Calendar({ session }: { session: Session }) {
 
   const events: DisplayEvent[] = useMemo(
     () => [
-      ...cal.own.map((e) => ({ ...e, mine: true, displayColor: e.color })),
+      ...cal.own
+        .filter((e) => !e.calendar_id || !hiddenCals.has(e.calendar_id))
+        .map((e) => ({ ...e, mine: true, displayColor: calMap.get(e.calendar_id ?? '')?.color ?? e.color })),
       ...cal.others.map((e) => ({ ...e, mine: false, displayColor: colorOf(e.owner), ownerName: nameOf(e.owner) })),
     ],
-    [cal.own, cal.others, colorOf, nameOf],
+    [cal.own, cal.others, colorOf, nameOf, hiddenCals, calMap],
   );
 
   const flash = useCallback((msg: string, undo = false) => {
@@ -175,9 +204,9 @@ export default function Calendar({ session }: { session: Session }) {
     (start: Date, end: Date, allDay = false) =>
       openModal({
         mine: true,
-        ev: { title: '', start_at: start.toISOString(), end_at: end.toISOString(), all_day: allDay, color: EVENT_COLORS[0], visibility: 'busy' },
+        ev: { title: '', start_at: start.toISOString(), end_at: end.toISOString(), all_day: allDay, color: EVENT_COLORS[0], visibility: 'busy', calendar_id: calsApi.cals[0]?.id },
       }),
-    [openModal],
+    [openModal, calsApi.cals],
   );
 
   useEffect(() => {
@@ -335,16 +364,17 @@ export default function Calendar({ session }: { session: Session }) {
         </div>
         <div className="seg">
           {VIEWS.map((v) => (
-            <button key={v.id} className={view === v.id ? 'on' : ''} onClick={() => changeView(v.id)}>
+            <button key={v.id} className={(view === v.id ? 'on' : '') + ' v-' + v.id} onClick={() => changeView(v.id)}>
               {v.label}
             </button>
           ))}
         </div>
-        <button className="btn primary" onClick={() => openNew(new Date(Date.now() + 3600000), new Date(Date.now() + 7200000))}>
-          Nuevo evento
+        <button className="btn primary fab" onClick={() => openNew(new Date(Date.now() + 3600000), new Date(Date.now() + 7200000))} aria-label="Nuevo evento">
+          <span className="fab-t">Nuevo evento</span>
+          <span className="fab-i">+</span>
         </button>
-        <button className="btn" onClick={() => void supabase.auth.signOut()} title={me.email ?? ''}>
-          Salir
+        <button className="avatar" onClick={() => setShowProfile(true)} title={me.email ?? 'Mi perfil'} aria-label="Mi perfil">
+          {(me.email ?? '?')[0].toUpperCase()}
         </button>
       </header>
 
@@ -365,6 +395,7 @@ export default function Calendar({ session }: { session: Session }) {
       )}
 
       <div className="body">
+        {sidebar && <div className="scrim" onClick={() => setSidebar(false)} />}
         <aside className={'sidebar' + (sidebar ? ' open' : '')}>
           <MiniCalendar
             cursor={cursor}
@@ -374,6 +405,17 @@ export default function Calendar({ session }: { session: Session }) {
               setSidebar(false);
             }}
           />
+          <h4 style={{ marginTop: 0 }}>Mis calendarios</h4>
+          {calsApi.cals.map((c) => (
+            <label key={c.id} className="calrow">
+              <input type="checkbox" checked={!hiddenCals.has(c.id)} onChange={() => toggleCal(c.id)} style={{ accentColor: c.color }} />
+              <span className="calname">{c.name}</span>
+              <span className="muted small">{shareLabel(c)}</span>
+            </label>
+          ))}
+          <button className="btn small" style={{ marginTop: 8 }} onClick={() => setShowCals(true)}>
+            Gestionar y compartir
+          </button>
           <FriendsPanel
             userId={me.id}
             rows={friends.rows}
@@ -411,6 +453,17 @@ export default function Calendar({ session }: { session: Session }) {
             </button>
           </div>
           <input ref={fileRef} type="file" accept=".ics,text/calendar" hidden onChange={(e) => void onIcsFile(e)} />
+          {install.canInstall && (
+            <>
+              <h4>Aplicación</h4>
+              <button className="btn small primary" onClick={() => void install.prompt()}>
+                Instalar en este dispositivo
+              </button>
+            </>
+          )}
+          {install.ios && !install.standalone && (
+            <p className="muted small">En iPhone o iPad: pulsa Compartir y elige “Añadir a pantalla de inicio”.</p>
+          )}
           <p className="muted small">
             Atajos: <kbd>t</kbd> hoy · <kbd>m</kbd> <kbd>w</kbd> <kbd>d</kbd> <kbd>a</kbd> vistas · <kbd>n</kbd> nuevo · <kbd>/</kbd> buscar · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer
           </p>
@@ -422,7 +475,12 @@ export default function Calendar({ session }: { session: Session }) {
             view={view}
             cursor={cursor}
             events={events}
-            onCreate={openNew}
+            onCreate={(s, e, all) => {
+              if (view === 'month' && window.matchMedia('(max-width: 800px)').matches) {
+                setCursor(s);
+                changeView('day');
+              } else openNew(s, e, all);
+            }}
             onMove={(ev, s, e) => void onMove(ev, s, e)}
             onOpen={(ev) => openModal({ mine: ev.mine, ownerName: ev.ownerName, ev })}
           />
@@ -434,11 +492,24 @@ export default function Calendar({ session }: { session: Session }) {
           key={modal.k}
           initial={modal.ev}
           readOnly={!modal.mine}
+          calendars={calsApi.cals}
           ownerName={modal.ownerName}
           onSave={onSave}
           onDelete={onDelete}
           onDuplicate={(ev) => openModal({ mine: true, ev })}
           onClose={() => setModal(null)}
+        />
+      )}
+      {showProfile && <ProfileModal user={me} onClose={() => setShowProfile(false)} />}
+      {showCals && (
+        <CalendarsModal
+          api={calsApi}
+          friends={accepted.map((r) => ({ id: r.profile.id, name: r.profile.display_name || r.profile.username || r.profile.email }))}
+          onError={flash}
+          onClose={() => {
+            setShowCals(false);
+            void cal.reload();
+          }}
         />
       )}
       {toast && (

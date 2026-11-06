@@ -255,3 +255,46 @@ h4 { border-top:0; padding-top:0; margin:26px 0 8px; font-size:14px; font-weight
 .title-input { font-size:22px; font-weight:400; }
 .toast { left:24px; bottom:24px; transform:none; border-radius:6px; background:#2d2f33; color:#fff; box-shadow:0 4px 12px rgba(0,0,0,.3); }
 .toast button { color:#8ab4f8; text-decoration:none; font-weight:600; }
+
+/* Calendarios */
+.calrow { display: flex; align-items: center; gap: 10px; padding: 4px 0; cursor: pointer; }
+.calname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal.wide { width: min(560px, 100%); }
+.calcard { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.dot.big { width: 14px; height: 14px; }
+.friends h3 { margin-top: 26px; }
+
+/* ===== Perfil, instalación y móvil ===== */
+button { touch-action: manipulation; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-text); font-weight: 600; font-size: 14px; flex: none; }
+.avatar:hover { filter: brightness(1.1); }
+.lbl-val { padding-top: 8px; overflow-wrap: anywhere; }
+.fab-i, .scrim { display: none; }
+
+@media (max-width: 800px) {
+  body { overscroll-behavior: none; }
+  input, select, textarea { font-size: 16px; }
+  header { position: sticky; top: 0; z-index: 10; min-height: 0; row-gap: 6px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; }
+  header .grow { display: none; }
+  header .btn { padding: 0 12px; }
+  h2 { flex: 1; min-width: 0; margin: 0 0 0 4px; font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seg { order: 9; width: 100%; } .seg button { flex: 1; } .seg .v-week { display: none; }
+  .avatar { order: 5; }
+  .fab { position: fixed; right: 16px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 12; width: 56px; height: 56px; padding: 0; border-radius: 18px; font-size: 30px; font-weight: 400; box-shadow: 0 6px 18px rgba(26, 115, 232, .45); }
+  .fab-t { display: none; } .fab-i { display: inline; line-height: 1; }
+  .scrim { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, .4); z-index: 14; }
+  .sidebar { padding-top: calc(16px + env(safe-area-inset-top)); padding-bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 16; }
+  main { padding: 0 0 92px; }
+  .month, .week, .agenda { border-radius: 0; border-left: 0; border-right: 0; }
+  .dow { padding: 6px 0; font-size: 10px; }
+  .cell { padding: 2px 0; }
+  .num { min-width: 26px; height: 26px; margin: 2px 0 1px; }
+  .chip { display: inline-block; width: 6px; height: 6px; padding: 0; margin: 1px; border-radius: 50%; font-size: 0; line-height: 0; vertical-align: top; background: var(--c) !important; border: 0 !important; }
+  .chip * { display: none; }
+  .more { display: none; }
+  .block { touch-action: pan-y; }
+  .agenda { padding: 4px 14px 20px; }
+  .backdrop { place-items: end center; padding: 0; }
+  .modal, .modal.wide { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+  .toast { left: 12px; right: 12px; bottom: calc(88px + env(safe-area-inset-bottom)); max-width: none; }
+}

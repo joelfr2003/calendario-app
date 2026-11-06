@@ -4,7 +4,7 @@ import type { CalEvent } from './types';
 type Row = Record<string, unknown>;
 
 export const norm = (e: Row): CalEvent =>
-  ({ location: null, recurrence: null, exdates: [], reminder_min: null, ...e }) as unknown as CalEvent;
+  ({ location: null, calendar_id: null, recurrence: null, exdates: [], reminder_min: null, ...e }) as unknown as CalEvent;
 
 /** Mis eventos del rango, más las series repetidas que empezaron antes */
 export async function fetchOwn(userId: string, from: Date, to: Date) {
